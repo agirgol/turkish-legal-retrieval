@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Data and artefacts — fetched or produced, never committed
+data/corpus/
+data/index/
+runs/
+models/
+*.parquet
+*.duckdb
+
+# Notebooks' output
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+
+# Local state
+.env

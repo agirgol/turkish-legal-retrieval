@@ -1,0 +1,41 @@
+[project]
+name = "turkish-legal-retrieval"
+version = "0.1.0"
+description = "Retrieval measured on Turkish legislation"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "datasets>=3",
+    "huggingface-hub>=0.28",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tlr"]
+
+[dependency-groups]
+# Split so the retrieval work does not drag a GPU stack onto a laptop that only
+# wants to run the benchmark.
+dev = [
+    "pytest>=8",
+    "ruff>=0.9",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+
+# RUF001/003 exist to catch homoglyph attacks — a Cyrillic а hiding among Latin
+# ones. Turkish letters are not that: ı, İ, ş, ğ are the alphabet this corpus is
+# written in, and this repository is about handling them correctly. Flagging
+# them would mean either a wall of noqa or, worse, someone "fixing" a dotless ı
+# into an i and quietly breaking the parser.
+allowed-confusables = ["ı", "İ", "ş", "Ş", "ğ", "Ğ", "ç", "Ç", "ö", "Ö", "ü", "Ü", "’", "ʼ"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
