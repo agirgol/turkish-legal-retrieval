@@ -45,12 +45,34 @@ class PassageId:
         return f"{self.law_number}/{prefix}{self.article_number}"
 
 
+# An article whose content was moved into the law it amends leaves a pointer
+# behind: "İlgili Kanunlara işlenmiştir", "yürürlükten kaldırılmıştır", a bare
+# "(Mülga: 22/7/1998-4369/82 md.)". Measured over the corpus, these are 6.4%
+# of articles before the repealed ones are counted.
+#
+# They stay in the index, because a retriever does have to sift past them. They
+# cannot be gold answers, because there is nothing in them to retrieve: a pair
+# pointing at one is unanswerable by construction, and including such pairs
+# lowers every system's score by the same amount while telling you nothing.
+_POINTER = re.compile(
+    r"(işlenmiştir|yürürlükten\s+kaldırıl|^\s*[(–\-\s]*Mülga)", re.IGNORECASE
+)
+_POINTER_MAX_CHARS = 200
+
+
 @dataclass(frozen=True)
 class Passage:
     id: PassageId
     law_name: str
     heading: str
     text: str
+
+    @property
+    def is_substantive(self) -> bool:
+        """Whether there is anything here to retrieve."""
+        return not (
+            len(self.text) < _POINTER_MAX_CHARS and _POINTER.search(self.text)
+        )
 
 
 _NUMBER = re.compile(r"(\d+)")
@@ -100,4 +122,31 @@ def load_passages() -> list[Passage]:
                 )
             )
 
-    return passages
+    return _one_passage_per_article(passages)
+
+
+def _one_passage_per_article(passages: list[Passage]) -> list[Passage]:
+    """Collapses articles that appear more than once, keeping the longest text.
+
+    The source is scraped, and some laws are tables rather than prose. Law 3520
+    renumbers the articles of other laws, so it is a two-column list — and the
+    scraper turned every row of that list into an article with the same
+    heading. "Geçici Madde 1" of that law appears 162 times, each time holding a
+    fragment like "2.1.1961 203".
+
+    Measured over the corpus: 40,496 rows carry 31,304 distinct article numbers.
+    Left alone, a citation resolving to one of them would have up to 135
+    candidate answers, none of them a provision, and every metric computed over
+    it would be measuring the scraper.
+
+    Longest wins. Where an article genuinely appears twice — fourteen laws are
+    on more than one row of the source — the fuller text is the one a citation
+    is about.
+    """
+    best: dict[PassageId, Passage] = {}
+    for passage in passages:
+        current = best.get(passage.id)
+        if current is None or len(passage.text) > len(current.text):
+            best[passage.id] = passage
+
+    return list(best.values())

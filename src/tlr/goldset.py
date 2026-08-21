@@ -49,6 +49,12 @@ def build(passages: list[Passage]) -> list[GoldPair]:
                 # about.
                 continue
 
+            target = by_id[gold]
+            if not target.is_substantive:
+                # The citation is real; the article it names has had its content
+                # moved elsewhere. There is nothing at that address to find.
+                continue
+
             if gold == passage.id:
                 # An article citing itself is a formatting artefact, not a
                 # retrieval task with an answer somewhere else.

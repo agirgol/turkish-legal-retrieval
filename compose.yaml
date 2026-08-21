@@ -1,0 +1,32 @@
+# One database for both halves of retrieval.
+#
+# Dense vectors in pgvector and sparse matching in Postgres' own full-text
+# search means hybrid retrieval is a query rather than a system: no second
+# store to keep in step, no reconciling two ideas of what a document is.
+name: turkish-legal-retrieval
+
+services:
+  postgres:
+    # ParadeDB rather than plain pgvector: it carries pg_search, which is a real
+    # BM25 over a Tantivy index, and pgvector alongside it. Postgres' own
+    # ts_rank has no IDF term weighting, so a 300-character legal query OR-ed
+    # across its terms matched 26,205 of 31,304 passages and ranked a document
+    # 1,360th when searched with its own text. A lexical baseline that weak
+    # would flatter everything measured against it.
+    image: paradedb/paradedb:pg18
+    environment:
+      POSTGRES_DB: tlr
+      POSTGRES_USER: tlr
+      POSTGRES_PASSWORD: tlr
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tlr -d tlr"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql
+
+volumes:
+  pgdata:

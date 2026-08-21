@@ -6,6 +6,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "datasets>=3",
     "huggingface-hub>=0.28",
+    "psycopg[binary]>=3.2",
 ]
 
 [build-system]
@@ -35,7 +36,7 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
 # written in, and this repository is about handling them correctly. Flagging
 # them would mean either a wall of noqa or, worse, someone "fixing" a dotless ı
 # into an i and quietly breaking the parser.
-allowed-confusables = ["ı", "İ", "ş", "Ş", "ğ", "Ğ", "ç", "Ç", "ö", "Ö", "ü", "Ü", "’", "ʼ"]
+allowed-confusables = ["ı", "İ", "ş", "Ş", "ğ", "Ğ", "ç", "Ç", "ö", "Ö", "ü", "Ü", "’", "ʼ", "–"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
