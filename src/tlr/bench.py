@@ -63,20 +63,71 @@ def check() -> int:
             if rate < _SELF_RETRIEVAL_FLOOR:
                 failed = True
 
+        failed |= _check_dense(conn, rows)
+
     return 1 if failed else 0
 
 
-def bench(k: int, limit: int | None) -> int:
+def _check_dense(conn, rows) -> bool:
+    """The same question of any dense model that has been embedded.
+
+    A vector pipeline fails differently from a lexical one — a prefix omitted, a
+    normalisation skipped, a dimension mismatch — and all of those produce
+    plausible-looking neighbours rather than an error.
+    """
+    from tlr.dense import MODELS, load_encoder
+    from tlr.dense import search as dense_search
+
+    failed = False
+    for key, model in MODELS.items():
+        embedded = conn.execute(
+            "SELECT count(*) FROM information_schema.tables WHERE table_name = %s",
+            (model.table,),
+        ).fetchone()[0]
+        if not embedded:
+            continue
+
+        encoder = load_encoder(model)
+        missed = [
+            passage_id
+            for passage_id, body in rows
+            if passage_id not in dense_search(conn, model, encoder, body[:300], k=1)
+        ]
+        rate = 1 - len(missed) / len(rows)
+        verdict = "ok" if rate >= _SELF_RETRIEVAL_FLOOR else "TOO LOW"
+        print(
+            f"  {key:<9} {len(rows) - len(missed)}/{len(rows)} "
+            f"retrieved themselves at rank 1  ({rate:.0%}, {verdict})"
+        )
+        if rate < _SELF_RETRIEVAL_FLOOR:
+            failed = True
+
+    return failed
+
+
+def bench(k: int, limit: int | None, models: list[str]) -> int:
     with connect() as conn:
         for config in CONFIGS:
-            started = time.monotonic()
-            rankings = rank_gold_set(conn, config, k=k, limit=limit)
-            elapsed = time.monotonic() - started
-            print(
-                f"  {score(rankings).as_row(config)}"
-                f"  ({elapsed:.0f}s, {len(rankings) / elapsed:.0f} q/s)"
-            )
+            _report(config, lambda c=config: rank_gold_set(conn, c, k=k, limit=limit))
+
+        for key in models:
+            from tlr.dense import MODELS
+            from tlr.dense import rank_gold_set as rank_dense
+
+            model = MODELS[key]
+            _report(key, lambda m=model: rank_dense(conn, m, k=k, limit=limit))
+
     return 0
+
+
+def _report(label: str, run) -> None:
+    started = time.monotonic()
+    rankings = run()
+    elapsed = time.monotonic() - started
+    print(
+        f"  {score(rankings).as_row(label)}"
+        f"  ({elapsed:.0f}s, {len(rankings) / max(elapsed, 1e-9):.0f} q/s)"
+    )
 
 
 def main() -> int:
@@ -89,6 +140,13 @@ def main() -> int:
     run = commands.add_parser("bench", help="score every configuration")
     run.add_argument("-k", type=int, default=10, help="depth to retrieve to")
     run.add_argument("--limit", type=int, default=None, help="use only N queries")
+    run.add_argument(
+        "--dense",
+        action="append",
+        default=[],
+        metavar="MODEL",
+        help="also score a dense model; repeatable",
+    )
 
     args = parser.parse_args()
 
@@ -100,7 +158,7 @@ def main() -> int:
     if args.command == "check":
         return check()
 
-    return bench(args.k, args.limit)
+    return bench(args.k, args.limit, args.dense)
 
 
 if __name__ == "__main__":

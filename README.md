@@ -53,13 +53,53 @@ Absolute numbers are low because the task is hard for lexical matching: the
 query is what an article says *about* another article, not what that article is
 about. Retrieving 10 of 31,304 passages at random would score 0.0003.
 
+## Dense against lexical
+
+Same gold set, same metric, exact search on both sides.
+
+| | R@1 | R@5 | R@10 | MRR | q/s |
+|---|---|---|---|---|---|
+| BM25, no stemming | 0.009 | 0.095 | 0.139 | 0.046 | 38 |
+| BM25 + Turkish stemmer | 0.012 | 0.101 | **0.156** | 0.052 | 36 |
+| `ytu-ce-cosmos/turkish-e5-large` | **0.022** | 0.099 | 0.154 | **0.056** | 15 |
+| `intfloat/multilingual-e5-small` | 0.017 | 0.073 | 0.114 | 0.042 | 116 |
+
+Neither side wins. Dense is roughly twice as precise at rank 1 — a 118M-parameter
+model beats both lexical baselines there — and lexical has the better recall at
+depth 10. That split is the textbook argument for hybrid ranking, and here it is
+on one corpus with one metric rather than as an assertion.
+
+A 200-query sample had `turkish-e5` ahead at R@10 as well, 0.150 against 0.125.
+Over all 5,010 it is 0.154 against 0.156. The sample was not wrong so much as
+too small, which is worth stating because a 200-query run takes twenty seconds
+and a full one takes ten minutes.
+
+### The index was charging the model for its own errors
+
+Dense results were initially far worse — until the harness check was pointed at
+them. Searching 40 passages by their own text:
+
+| | retrieved itself |
+|---|---|
+| `query:` prefix, HNSW | 29/40 |
+| `passage:` prefix, HNSW | 26/40 |
+| `passage:` prefix, exact scan | **34/40** |
+
+The gap is not the encoder's asymmetric prefixes, it is the approximate index.
+Leaving it in would have charged the model for the index's error and then
+compared that total against a lexical baseline with no equivalent handicap. The
+benchmark searches exactly; the HNSW index stays, because a deployment needs one,
+and what it costs is worth measuring on its own.
+
 ## The harness has to prove itself first
 
 ```
 $ uv run tlr check
-  plain     39/40 retrieved themselves at rank 1  (98%, ok)
-            not retrieved: 1072/6
-  stemmed   39/40 retrieved themselves at rank 1  (98%, ok)
+  plain      39/40 retrieved themselves at rank 1  (98%, ok)
+             not retrieved: 1072/6
+  stemmed    39/40 retrieved themselves at rank 1  (98%, ok)
+  e5-small   34/40 retrieved themselves at rank 1  (85%, ok)
+  turkish-e5 37/40 retrieved themselves at rank 1  (92%, ok)
 ```
 
 A passage searched with its own text must come back first. This one did not,
@@ -126,7 +166,9 @@ Code is MIT.
 |---|---|
 | Gold set from citations, 5,010 pairs | ✅ |
 | BM25 baseline, with and without stemming | ✅ |
-| Dense retrieval (pgvector, multilingual and Turkish embedding models) | ⬜ |
+| Dense retrieval, exact, against the lexical baselines | ✅ |
+| The rest of TR-MTEB's top models — `bge-m3`, `e5-large-instruct` | ⬜ |
+| What the HNSW index costs, measured on its own | ⬜ |
 | Hybrid ranking | ⬜ |
 | Chunking strategies | ⬜ |
 | A second, generated question set — and whether it ranks pipelines the same way | ⬜ |
